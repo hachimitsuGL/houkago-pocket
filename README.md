@@ -14,8 +14,21 @@
 
 - `static/` にある HTML、CSS、JavaScript が一覧と投稿フォームを表示します。
 - Flask が `GET /api/posts` と `POST /api/posts` を提供します。写真から位置情報などのメタデータを取り除いて保存します。
-- Azure App Service の Linux / Python 3.12 で動作します。既定では、投稿と写真を `/home/data/houkago-pocket` に保存します。Azure Storage を設定すると、本文は Table、写真は非公開の Blob に保存されます。
+- 公開サイトは Azure App Service の Linux / Python 3.12 で動作します。投稿本文を `/home/data/houkago-pocket` に、写真を非公開の Azure Blob Storage に保存します。以前の写真は初めて開いたときに同じ画像 URL のまま Blob に移行します。
 - GitHub Actions が `main` への push を受け、Linux 用の依存関係を含むアプリを作成します。Azure への認証は OIDC を使います。デプロイ後は `/static/release.json` のコミットと投稿一覧 API を確認します。
+
+## Azure に写真を保存する
+
+既存の Web App と同じサブスクリプションを選び、Cloud Shell の Bash でプロジェクトのディレクトリを開きます。`APP` にアプリ名、`RG` にリソースグループ名、`LOCATION` に利用可能なリージョン（例 `japaneast`）を設定します。学校が用意したアプリを使う場合は、対象を確認して `export POCKET_USE_ASSIGNED_APP=1` を設定します。
+
+| コマンド | 投稿本文 | 新規投稿の写真 |
+| --- | --- | --- |
+| `bash deploy.sh blob` | App Service のファイル。これまでの投稿も引き続き表示 | 非公開コンテナー。アプリ設定は `BLOB_ACCOUNT_NAME` と `BLOB_CONTAINER` |
+| `bash deploy.sh storage` | Azure Table。設定を切り替える前の本文は自動移行されません | 同じ非公開コンテナー |
+
+どちらも、必要に応じて指定リージョンに Standard LRS のストレージアカウントとコンテナー `pocketimages` を作成します。LRS は一つのデータセンター内でデータを複製し、保存容量や読み書きの回数などに応じて料金がかかります。[Azure Blob Storage の料金](https://azure.microsoft.com/ja-jp/pricing/details/storage/blobs/)
+
+写真の読み書きには Web App のシステム割り当てマネージド ID を使います。`Storage Blob Data Contributor` の権限は画像コンテナー内に限定します。ストレージの共有キー認証と匿名 Blob アクセスは無効です。写真は掲示板の画像 URL から表示されます。設定後は写真付きの新規投稿を作り、別のブラウザーでも画像が表示されることを確認してください。
 
 ## ローカルで起動する
 

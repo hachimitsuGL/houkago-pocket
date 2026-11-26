@@ -8,13 +8,14 @@ usage() {
   cat <<'USAGE'
 Set APP to a unique name for this assignment and LOCATION to an allowed Azure region.
   bash deploy.sh web      Create the Linux plan/web app and deploy the current source.
+  bash deploy.sh blob     Keep posts in app files and store new photos in private Blob Storage (metered).
   bash deploy.sh storage  Add Table Storage + a private Blob container (metered).
   bash deploy.sh ci       Link a public GitHub repo to this web app (requires REPO=owner/name).
 Optional: RG (defaults to rg-$APP), SKU (F1 by default; B1 is paid).
 USAGE
 }
 mode=${1:-}
-case "$mode" in web|storage|ci) ;; *) usage; exit 2 ;; esac
+case "$mode" in web|blob|storage|ci) ;; *) usage; exit 2 ;; esac
 : "${APP:?Set APP to your project web app name first.}"
 : "${LOCATION:?Set LOCATION to your allowed Azure region first.}"
 [[ "$APP" =~ ^[a-z][a-z0-9-]{1,38}[a-z0-9]$ ]] || die "Use 3–40 lowercase letters, numbers or hyphens for APP."
@@ -26,13 +27,13 @@ sku=${SKU:-F1}
 sub=$(az account show --query id -o tsv)
 echo "Subscription=$sub  Resource group=$rg  App=$APP  Region=$LOCATION  Command=$mode"
 
-# Only re-use resources created for this project's APP name.
+# Reuse tagged resources, or a storage account selected explicitly by configuration.
 resource_state() {
   local kind=$1 name=$2 item
   item=$(az resource list -g "$rg" --resource-type "$kind" --name "$name" --query '[0]' -o json) || return 1
   if [[ -z "$item" || "$item" == null ]]; then
     echo new
-  elif jq -e --arg app "$APP" '.tags.sk21Pocket == $app' <<< "$item" >/dev/null; then
+  elif [[ "${3:-}" == explicitly_selected ]] || jq -e --arg app "$APP" '.tags.sk21Pocket == $app' <<< "$item" >/dev/null; then
     echo existing
   else
     die "An unrelated resource named $name exists. Choose a different project name."
@@ -96,27 +97,67 @@ grant_role() {
   fi
 }
 
-if [[ "$mode" == storage ]]; then
+if [[ "$mode" == blob || "$mode" == storage ]]; then
+  # Read only the names used by the application's storage configuration.
+  config=$(az webapp config appsettings list -g "$rg" -n "$APP" \
+    --query "[?name=='STORAGE_ACCOUNT_NAME'||name=='BLOB_ACCOUNT_NAME'||name=='BLOB_CONTAINER'||name=='TABLE_NAME']" -o json)
+  setting() { jq -r --arg name "$1" '.[] | select(.name == $name) | .value' <<< "$config"; }
+  table_account=$(setting STORAGE_ACCOUNT_NAME)
+  blob_account=$(setting BLOB_ACCOUNT_NAME)
+  old_container=$(setting BLOB_CONTAINER)
+  old_table=$(setting TABLE_NAME)
+  if [[ "$mode" == blob && -n "$table_account" ]]; then
+    die "Table + Blob is already configured. Keep it, or explicitly clear STORAGE_ACCOUNT_NAME to select file-backed posts first."
+  fi
+  active_account=${table_account:-$blob_account}
   suffix=$(printf '%s' "$sub/$rg/$APP" | sha256sum | cut -c1-15)
-  store="pocket$suffix"
-  store_state=$(resource_state Microsoft.Storage/storageAccounts "$store")
+  store=${BLOB_ACCOUNT_NAME:-${active_account:-pocket$suffix}}
+  container=${BLOB_CONTAINER:-${old_container:-pocketimages}}
+  table=${old_table:-pocketposts}
+  [[ "$store" =~ ^[a-z0-9]{3,24}$ ]] || die "Invalid Blob storage account name."
+  [[ "$container" =~ ^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$ && "$container" != *--* ]] || die "Invalid Blob container name."
+  if [[ -n "$active_account" && ("$store" != "$active_account" || "$container" != "${old_container:-pocketimages}") ]]; then
+    die "This app is already connected to another account/container. Existing posts still refer to those pictures."
+  fi
+  selection=
+  if [[ -n "${BLOB_ACCOUNT_NAME:-}" || -n "$active_account" ]]; then selection=explicitly_selected; fi
+  store_state=$(resource_state Microsoft.Storage/storageAccounts "$store" "$selection")
   if [[ "$store_state" == new ]]; then
-    echo "Creating Standard_LRS storage account $store..."
+    echo "Creating Standard_LRS storage account $store in $LOCATION..."
     az storage account create -g "$rg" -n "$store" -l "$LOCATION" --sku Standard_LRS --kind StorageV2 \
-      --min-tls-version TLS1_2 --allow-blob-public-access false --allow-shared-key-access false \
+      --https-only true --min-tls-version TLS1_2 --allow-blob-public-access false --allow-shared-key-access false \
       --tags "sk21Pocket=$APP" -o none
   fi
-  store_id=$(az storage account show -g "$rg" -n "$store" --query id -o tsv)
-  table_id="$store_id/tableServices/default/tables/pocketposts"
-  az rest --method put --url "https://management.azure.com$table_id?api-version=2023-05-01" --body '{"properties":{}}' -o none
-  az storage container-rm create -g "$rg" --storage-account "$store" -n pocketimages --public-access off -o none
-  principal=$(az webapp identity assign -g "$rg" -n "$APP" --query principalId -o tsv)
-  grant_role "$principal" 'Storage Table Data Contributor' "$table_id"
-  grant_role "$principal" 'Storage Blob Data Contributor' "$store_id/blobServices/default/containers/pocketimages"
-  az webapp config appsettings set -g "$rg" -n "$APP" \
-    --settings "STORAGE_ACCOUNT_NAME=$store" TABLE_NAME=pocketposts BLOB_CONTAINER=pocketimages -o none
-  echo "Storage=$store  Table=pocketposts  Container=pocketimages"
-  echo "After permissions take effect, submit a new post with an image and verify it in a second browser."
+  account=$(az storage account show -g "$rg" -n "$store" \
+    --query '{id:id,public:allowBlobPublicAccess,sharedKey:allowSharedKeyAccess,sku:sku.name,region:location}' -o json)
+  jq -e '.public == false and .sharedKey == false' <<< "$account" >/dev/null ||
+    die "Select a storage account with both anonymous blob access and Shared Key authorization disabled."
+  store_id=$(jq -er '.id' <<< "$account")
+  echo "Image storage: $store / $container ($(jq -r '.sku + ", " + .region' <<< "$account"))"
+  az storage container-rm create -g "$rg" --storage-account "$store" -n "$container" --public-access off -o none
+
+  principal=$(az webapp show -g "$rg" -n "$APP" --query identity.principalId -o tsv)
+  if [[ -z "$principal" || "$principal" == None ]]; then
+    principal=$(az webapp identity assign -g "$rg" -n "$APP" --query principalId -o tsv)
+  fi
+  grant_role "$principal" 'Storage Blob Data Contributor' "$store_id/blobServices/default/containers/$container"
+  if [[ "$mode" == storage ]]; then
+    table_id="$store_id/tableServices/default/tables/$table"
+    az rest --method put --url "https://management.azure.com$table_id?api-version=2023-05-01" --body '{"properties":{}}' -o none
+    grant_role "$principal" 'Storage Table Data Contributor' "$table_id"
+    if [[ "$table_account" != "$store" || "$old_table" != "$table" || "$old_container" != "$container" ]]; then
+      az webapp config appsettings set -g "$rg" -n "$APP" \
+        --settings "STORAGE_ACCOUNT_NAME=$store" "TABLE_NAME=$table" "BLOB_CONTAINER=$container" -o none
+    fi
+    echo "Posts: Azure Table $table"
+  else
+    if [[ "$blob_account" != "$store" || "$old_container" != "$container" ]]; then
+      az webapp config appsettings set -g "$rg" -n "$APP" \
+        --settings "BLOB_ACCOUNT_NAME=$store" "BLOB_CONTAINER=$container" -o none
+    fi
+    echo "Posts: App Service files. New photos: private Blob Storage."
+  fi
+  echo "After role permissions take effect, submit a new photo and verify it in a second browser."
   exit 0
 fi
 
