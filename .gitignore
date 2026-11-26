@@ -1,0 +1,24 @@
+# Local runtime and generated packages
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+instance/
+.DS_Store
+*.zip
+.azure/
+.azure-cli/
+.deployment-state*
+.pocket-*
+
+# Local environment and cloud credentials
+.env
+.env.*
+*.publishsettings
+*.PublishSettings
+*.pubxml
+*.pubxml.user
+*.pem
+*.pfx
+*.key
+local.settings.json

@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#173e34">
+  <meta name="description" content="バスや部活までの5分、15分、30分。高校生の空き時間にちょうどいい過ごし方を持ち寄る掲示板です。">
+  <title>放課後ポケット｜高校生の空き時間掲示板</title>
+  <link rel="stylesheet" href="/static/board.css">
+  <script src="/static/board.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#board">掲示板へ移動</a>
+  <header class="topbar">
+    <div class="shell topbar-inner">
+      <a class="brand" href="/" aria-label="放課後ポケット ホーム"><span class="pocket-mark" aria-hidden="true"></span><span>放課後ポケット</span></a>
+      <nav aria-label="メインメニュー">
+        <a class="nav-board" href="#board">掲示板</a>
+        <button class="help-link" type="button" data-open="help">使い方</button>
+        <button class="compose-button" type="button" data-open="compose"><span aria-hidden="true">＋</span> 投稿する</button>
+      </nav>
+    </div>
+  </header>
+  <main class="shell">
+    <section class="hero" aria-labelledby="hero-title">
+      <div class="hero-content">
+        <p class="hero-label"><span aria-hidden="true" class="small-sun"></span>高校生の空き時間掲示板</p>
+        <h1 id="hero-title">放課後、あと<span>何分？</span></h1>
+        <p class="hero-intro">バス待ちや、部活の前に。<br class="only-small">今できることを探そう。</p>
+        <fieldset class="time-filter">
+          <legend class="sr-only">使える時間でアイデアを絞り込む</legend>
+          <label><input type="radio" name="available" value="all" checked><span>指定なし</span></label>
+          <label><input type="radio" name="available" value="5"><span><b>5</b> 分</span></label>
+          <label><input type="radio" name="available" value="15"><span><b>15</b> 分</span></label>
+          <label><input type="radio" name="available" value="30"><span><b>30</b> 分</span></label>
+        </fieldset>
+      </div>
+      <div class="hero-art" aria-hidden="true">
+        <div class="art-orbit"></div><i class="twinkle t-one"></i><i class="twinkle t-two"></i><i class="twinkle t-three"></i>
+        <div class="memo-pad"><i class="memo-coils"></i><div class="memo-ruling"></div></div>
+        <div class="art-clock"><i class="clock-crown"></i><div class="clock-face"><i class="clock-ticks"></i><i class="hand-short"></i><i class="hand-long"></i><i class="clock-pin"></i></div></div>
+        <div class="art-pencil"><i></i></div>
+      </div>
+    </section>
+    <section id="board" class="board" aria-labelledby="board-title">
+      <div class="board-heading">
+        <div class="heading-label"><span class="board-mark" aria-hidden="true"></span><h2 id="board-title">アイデア掲示板</h2></div>
+        <span class="count" id="post-count">6 件</span>
+      </div>
+      <fieldset class="category-filter">
+        <legend class="sr-only">カテゴリーで絞り込む</legend>
+        <label><input type="radio" name="category-filter" value="all" checked><span>すべて</span></label>
+        <label><input type="radio" name="category-filter" value="勉強"><span><i class="dot study"></i>勉強</span></label>
+        <label><input type="radio" name="category-filter" value="部活"><span><i class="dot club"></i>部活</span></label>
+        <label><input type="radio" name="category-filter" value="息抜き"><span><i class="dot rest"></i>息抜き</span></label>
+      </fieldset>
+      <p id="load-note" class="notice" role="status" hidden></p>
+      <p id="success-note" class="notice success" role="status" hidden></p>
+      <p id="filter-result" class="sr-only" role="status"></p>
+      <div id="cards" class="cards">
+        <article class="card" data-category="勉強" data-minutes="5">
+          <div class="card-meta"><span class="category study"><i></i>勉強</span><span class="time"><i class="clock-icon"></i>5 分</span></div>
+          <h3>英単語は、きょうの3語だけ</h3>
+          <p class="card-body">単語帳をぱっと開いて、目に入った3語で短い例文を作る。次のバス待ちで思い出せたらクリア！</p>
+          <div class="byline"><i class="editor-avatar" aria-hidden="true"></i>編集部の見本</div>
+        </article>
+        <article class="card" data-category="息抜き" data-minutes="15">
+          <div class="card-meta"><span class="category rest"><i></i>息抜き</span><span class="time"><i class="clock-icon"></i>15 分</span></div>
+          <h3>帰り道の「3色」スケッチ</h3>
+          <p class="card-body">空、木の葉、校舎の影。目の前から3色選び、手帳のすみに小さく描いてみよう。絵が苦手でも色だけでOK。</p>
+          <div class="byline"><i class="editor-avatar" aria-hidden="true"></i>編集部の見本</div>
+        </article>
+        <article class="card" data-category="部活" data-minutes="5">
+          <div class="card-meta"><span class="category club"><i></i>部活</span><span class="time"><i class="clock-icon"></i>5 分</span></div>
+          <h3>練習前のひとこと作戦会議</h3>
+          <p class="card-body">仲間と「今日はこれを試したい」を一つずつ交換。終わったあと、どうだったか聞き合う約束もしておく。</p>
+          <div class="byline"><i class="editor-avatar" aria-hidden="true"></i>編集部の見本</div>
+        </article>
+        <article class="card" data-category="勉強" data-minutes="15">
+          <div class="card-meta"><span class="category study"><i></i>勉強</span><span class="time"><i class="clock-icon"></i>15 分</span></div>
+          <h3>友だちと一問ずつ小テスト</h3>
+          <p class="card-body">今日の授業から一問ずつ問題を作り、ノートを交換。答え合わせでは、なぜその答えになるかも話してみる。</p>
+          <div class="byline"><i class="editor-avatar" aria-hidden="true"></i>編集部の見本</div>
+        </article>
+        <article class="card" data-category="部活" data-minutes="30">
+          <div class="card-meta"><span class="category club"><i></i>部活</span><span class="time"><i class="clock-icon"></i>30 分</span></div>
+          <h3>次の練習メニューを一枚に</h3>
+          <p class="card-body">前回うまくいったことを三つ書き出し、次に試す練習を一つ決める。部活ノートに一枚でまとめておこう。</p>
+          <div class="byline"><i class="editor-avatar" aria-hidden="true"></i>編集部の見本</div>
+        </article>
+        <article class="card" data-category="息抜き" data-minutes="30">
+          <div class="card-meta"><span class="category rest"><i></i>息抜き</span><span class="time"><i class="clock-icon"></i>30 分</span></div>
+          <h3>図書室で「一章だけ」読書</h3>
+          <p class="card-body">ふだんなら選ばない棚で、タイトルが気になった一冊を手に取る。好きな一文に出会ったら、しおりにはさんで帰ろう。</p>
+          <div class="byline"><i class="editor-avatar" aria-hidden="true"></i>編集部の見本</div>
+        </article>
+      </div>
+      <div class="empty" id="empty" hidden><h3>この条件のアイデアはまだありません</h3><p>使える時間やカテゴリーを変えてみよう。</p><button class="plain-button" id="clear-filters" type="button">絞り込みを解除</button></div>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="shell"><span class="footer-brand"><span class="pocket-mark" aria-hidden="true"></span>放課後ポケット</span><a href="#board">掲示板に戻る ↑</a></div></footer>
+  <dialog id="help" aria-labelledby="help-title"><div class="dialog-inner">
+    <button class="close" type="button" data-close aria-label="閉じる">×</button>
+    <h2 id="help-title">掲示板の使い方</h2>
+    <ol class="guide"><li><strong>使える時間を選ぼう</strong><p>たとえば「15分」なら、5分と15分でできるアイデアが表示されます。</p></li><li><strong>気になる過ごし方を探そう</strong><p>勉強・部活・息抜きで絞り込めます。「編集部の見本」は最初から載っている例です。</p></li><li><strong>自分のアイデアを投稿しよう</strong><p>誰でも読める掲示板です。本名・学校名・連絡先や、人の顔が写った写真は載せないでください。</p></li></ol>
+    <button class="primary-button" data-close type="button">掲示板を見る</button>
+  </div></dialog>
+  <dialog id="compose" aria-labelledby="compose-title"><div class="dialog-inner">
+    <button class="close" type="button" data-close aria-label="閉じる">×</button>
+    <h2 id="compose-title">アイデアを投稿</h2>
+    <p class="form-intro">空き時間にできることを、ひとつ教えてください。</p>
+    <form id="post-form" method="post" action="/api/posts" enctype="multipart/form-data">
+      <label class="field"><span>タイトル <small>40文字まで</small></span><input name="title" type="text" maxlength="40" required placeholder="例：帰り道の「3色」スケッチ"></label>
+      <label class="field"><span>やり方 <small>240文字まで</small></span><textarea name="body" rows="3" maxlength="240" required placeholder="何を、どんなふうにする？"></textarea></label>
+      <div class="field-pair">
+        <label class="field"><span>かかる時間</span><select name="minutes"><option value="5">5分</option><option value="15">15分</option><option value="30">30分</option></select></label>
+        <label class="field"><span>カテゴリー</span><select name="category"><option>勉強</option><option>部活</option><option>息抜き</option></select></label>
+      </div>
+      <label class="field"><span>ニックネーム <small>任意・12文字まで</small></span><input name="alias" type="text" maxlength="12" autocomplete="off" placeholder="匿名でも投稿できます"></label>
+      <label class="field"><span>写真 <small>任意・1枚</small></span><input name="image" type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="image-hint"><small id="image-hint">JPEG・PNG・WebPの静止画、3 MB・2,000万画素まで</small></label>
+      <p class="privacy">本名・学校名・連絡先や、人の顔が写った写真は載せないでください。投稿はだれでも読むことができます。</p>
+      <p id="form-error" class="error" role="alert" hidden></p>
+      <button class="primary-button" id="submit" type="submit">掲示板に投稿する</button>
+    </form>
+  </div></dialog>
+</body>
+</html>
