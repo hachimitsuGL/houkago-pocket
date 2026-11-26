@@ -60,6 +60,9 @@ jobs:
           export PYTHONPATH="$release/vendor"
           exec python -m gunicorn --bind=0.0.0.0:8000 --timeout 120 app:app
           LAUNCHER
+          # az rest sends a text file without its final newline. Match the bytes Kudu receives.
+          truncate -s -1 "$files/launcher.sh"
+          bash -n "$files/launcher.sh"
       - uses: actions/upload-artifact@v4
         with:
           name: houkago-linux-release
