@@ -1,0 +1,150 @@
+name: Deploy bulletin board to Azure
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: houkago-pocket-production
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Build and test Linux release
+        shell: bash
+        run: |
+          set -euo pipefail
+          payload="$RUNNER_TEMP/payload"
+          files="$RUNNER_TEMP/publish"
+          mkdir -p "$payload" "$files"
+          cp app.py board_storage.py requirements.txt "$payload/"
+          cp -R static "$payload/"
+          python -m pip install --disable-pip-version-check --no-compile \
+            --platform manylinux_2_28_x86_64 --platform manylinux_2_17_x86_64 \
+            --platform manylinux2014_x86_64 --python-version 3.12 --implementation cp \
+            --abi cp312 --only-binary=:all: --target "$payload/vendor" -r requirements.txt
+          release_id="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          jq -n --arg sha "$GITHUB_SHA" --arg release "$release_id" \
+            '{sha:$sha,release:$release}' > "$payload/static/release.json"
+          cd "$payload"
+          PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$payload/vendor" python - <<'PY'
+          import PIL._imaging, gunicorn, azure.data.tables, azure.storage.blob, azure.identity
+          from app import app
+          with app.test_client() as client:
+              assert client.get("/").status_code == 200
+              assert isinstance(client.get("/api/posts").get_json()["posts"], list)
+          PY
+          tar -czf "$RUNNER_TEMP/payload.tgz" app.py board_storage.py requirements.txt static vendor
+          base64 -w 0 "$RUNNER_TEMP/payload.tgz" > "$files/release.b64"
+          cat > "$files/launcher.sh" <<'LAUNCHER'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          release=$(mktemp -d /tmp/houkago-site-XXXXXX)
+          base64 -d "${0%.sh}.b64" | tar -xz -C "$release"
+          cd "$release"
+          export PYTHONPATH="$release/vendor"
+          exec python -m gunicorn --bind=0.0.0.0:8000 --timeout 120 app:app
+          LAUNCHER
+      - uses: actions/upload-artifact@v4
+        with:
+          name: houkago-linux-release
+          path: ${{ runner.temp }}/publish
+          compression-level: 0
+          retention-days: 1
+
+  deploy:
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      vars.AZURE_CLIENT_ID != '' && vars.AZURE_TENANT_ID != '' &&
+      vars.AZURE_SUBSCRIPTION_ID != '' && vars.AZURE_RESOURCE_GROUP != '' &&
+      vars.AZURE_WEBAPP_NAME != ''
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      id-token: write
+    env:
+      WEBAPP_NAME: ${{ vars.AZURE_WEBAPP_NAME }}
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: houkago-linux-release
+          path: ${{ runner.temp }}/publish
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Stage, activate and verify release
+        shell: bash
+        run: |
+          set -euo pipefail
+          app=(-g "$RESOURCE_GROUP" -n "$WEBAPP_NAME")
+          site=$(az webapp show "${app[@]}" -o json)
+          host=$(jq -er '.defaultHostName' <<< "$site")
+          scm=$(jq -er 'first(.enabledHostNames[] | select(contains(".scm.") and endswith(".azurewebsites.net")))' <<< "$site")
+          kudu="https://$scm/api/vfs/site"
+          release_id="$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          basename="houkago-ci-$release_id"
+          files="$RUNNER_TEMP/publish"
+          upload() {
+            local file=$1 remote=$2
+            local downloaded="$RUNNER_TEMP/verify-$remote"
+            for attempt in 1 2 3; do
+              if az rest -m put --url "$kudu/$remote" --resource https://management.azure.com/ \
+                   --headers 'Content-Type=text/plain' 'If-Match=*' --body "@$files/$file" -o none &&
+                 az rest -m get --url "$kudu/$remote" --resource https://management.azure.com/ \
+                   --output-file "$downloaded" -o none &&
+                 cmp -s "$files/$file" "$downloaded"; then
+                return 0
+              fi
+              sleep 3
+            done
+            echo "::error::Could not verify $remote on Kudu."
+            return 1
+          }
+          upload release.b64 "$basename.b64"
+          upload launcher.sh "$basename.sh"
+          previous=$(az webapp config show "${app[@]}" --query appCommandLine -o tsv)
+          target="bash /home/site/$basename.sh"
+          az webapp config set "${app[@]}" --startup-file "$target" -o none
+
+          deadline=$((SECONDS + 360))
+          while (( SECONDS < deadline )); do
+            probe="$release_id-$SECONDS"
+            if curl -fsS --max-time 15 -H 'Cache-Control: no-cache' \
+                 "https://$host/static/release.json?check=$probe" |
+                 jq -e --arg sha "$GITHUB_SHA" --arg release "$release_id" \
+                   '.sha == $sha and .release == $release' >/dev/null &&
+               curl -fsS --max-time 15 "https://$host/api/posts?check=$probe" |
+                 jq -e '.posts | type == "array"' >/dev/null; then
+              printf 'Verified commit %s on https://%s/\n' "$GITHUB_SHA" "$host" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 8
+          done
+
+          # A different operator may have selected another version while this job was waiting.
+          selected=$(az webapp config show "${app[@]}" --query appCommandLine -o tsv)
+          if [[ "$selected" == "$target" ]]; then
+            az webapp config set "${app[@]}" --startup-file "$previous" -o none
+            echo "::warning::Restored the startup command in use before this deployment."
+          fi
+          echo "::error::The new public release or bulletin board API did not pass the six-minute check."
+          exit 1
